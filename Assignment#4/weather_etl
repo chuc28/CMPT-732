@@ -1,0 +1,44 @@
+import sys
+assert sys.version_info >= (3, 5) # make sure we have Python 3.5+
+
+from pyspark.sql import SparkSession, functions, types
+spark = SparkSession.builder.appName('example code').getOrCreate()
+assert spark.version >= '2.4' # make sure we have Spark 2.4+
+spark.sparkContext.setLogLevel('WARN')
+sc = spark.sparkContext
+
+
+def main(inputs, output):
+
+    observation_schema = types.StructType([
+    types.StructField('station', types.StringType()),
+    types.StructField('date', types.StringType()),
+    types.StructField('observation', types.StringType()),
+    types.StructField('value', types.IntegerType()),
+    types.StructField('mflag', types.StringType()),
+    types.StructField('qflag', types.StringType()),
+    types.StructField('sflag', types.StringType()),
+    types.StructField('obstime', types.StringType()),
+    ])
+
+    weather = spark.read.csv(inputs, schema=observation_schema)
+
+    # get correct data
+    qflag_f = weather.filter(weather.qflag.isNull())
+    # get canadian data
+    name_f = qflag_f.filter(qflag_f.station.startswith('CA'))
+    # get maximum temperature data
+    obser_f = name_f.filter(name_f.observation == "TMAX")
+
+    # convert the temperature in °C, and call the resulting column tmax
+    celsius = weather.withColumn("tmax", (obser_f['value'] / 10 ))
+    # Keep only the columns station, date, and tmax
+    etl_data = celsius.select("station", "date", "tmax")
+
+    etl_data.write.json(output, compression='gzip', mode='overwrite')
+
+    
+if __name__ == '__main__':
+    inputs = sys.argv[1]
+    output = sys.argv[2]
+    main(inputs, output)
