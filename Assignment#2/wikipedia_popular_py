@@ -1,0 +1,42 @@
+from pyspark import SparkConf, SparkContext
+import sys
+
+inputs = sys.argv[1]
+output = sys.argv[2]
+
+conf = SparkConf().setAppName('wikipedia popular pyversion')
+sc = SparkContext(conf=conf)
+assert sys.version_info >= (3, 5)  # make sure we have Python 3.5+
+assert sc.version >= '2.3'  # make sure we have Spark 2.3+
+
+def words_once(line):
+    # put five things into tuple and convert page count to integer
+    yield(line.split()[0], line.split()[1], line.split()[2], int(line.split()[3]), line.split()[4])
+
+def get_key(kv):
+    return kv[0]
+
+def tab_separated(kv):
+    return "%s\t%s" % (kv[0], kv[1])
+
+# rewrite the mapper to get page title
+def my_mapper(line):
+    return (line[0], (line[3], line[2]))
+
+text = sc.textFile(inputs)
+records = text.flatMap(words_once)
+
+# remove the records we don't want to consider
+newrecords = records.filter(lambda x: x[1] == "en" and 
+    x[2]!= "Main_Page" and not x[2].startswith("Special:"))
+
+# create an RDD of key-value pairs
+newrecords = newrecords.map(my_mapper)
+
+# reduce to find the max value for each key
+wordcount = newrecords.reduceByKey(max)
+
+# sort the records by key
+outdata = wordcount.sortBy(get_key)
+
+outdata.map(tab_separated).saveAsTextFile(output)
